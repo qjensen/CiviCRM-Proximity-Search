@@ -1,0 +1,202 @@
+<?php 
+
+define('CIVICRM_PROXIMITY_DEGREE_TO_RADIANS', 0.01745329252);
+define('CIVICRM_PROXIMITY_KM_PER_LAT', 111.321);
+define('CIVICRM_PROXIMITY_DEFAULT_UNIT', 'km');
+define('CIVICRM_PROXIMITY_GOOGLE_GEOCODER_URL', 'http://maps.google.com/maps/api/geocode/json?');
+define('CIVICRM_PROXIMITY_GOOGLE_STATUS_OK', 'OK');
+define('CIVICRM_PROXIMITY_SQL_GREAT_CIRCLE', '(6371.0 * ACOS(SIN((!lat1 * RADIANS(1))) * SIN((!lat2 * RADIANS(1))) + COS((!lat1 * RADIANS(1))) * COS((!lat2 * RADIANS(1))) * COS((!lon1 * RADIANS(1)) - (!lon2 * RADIANS(1)))))');
+
+
+/**
+ * Implementation of hook_init().
+ */
+function civicrm_proximity_init() {
+  drupal_add_css(drupal_get_path('module', 'civicrm_proximity') .'/civicrm_proximity.css');
+}
+
+/**
+ * Implementation of hook_views_api().
+ */
+function civicrm_proximity_views_api() {
+  return array(
+    'api' => 2,
+    'path' => drupal_get_path('module', 'civicrm_proximity') .'/views',
+  );
+}
+
+/**
+ * Implementation of hook_views_data_alter()
+ */
+function civicrm_proximity_views_data_alter(&$data) {
+
+  if ( ! civicrm_initialize( ) ) {
+    return;
+  }	
+
+  $data['civicrm_address']['flat'] = array(
+    'title' => t('Square'),
+    'help' => t('Gives locations contained within a square derived by a simple latitude/longitude comparison.'),
+    'filter' => array(
+      'handler' => 'civicrm_proximity_handler_filter_square',
+    ),
+  );
+  $data['civicrm_address']['circle'] = array(
+    'title' => t('Great-circle'),
+    'help' => t('Uses the Great-circle distance formula to return locations within a circular area.'),
+    'filter' => array(
+      'handler' => 'civicrm_proximity_handler_filter_circle',
+    ),
+  );
+  $data['civicrm_address']['distance'] = array(
+    'title' => t('Distance'),
+    'help' => t('Search radius for addresses in results'),
+    'sort' => array(
+      'handler' => 'civicrm_proximity_handler_sort',
+    ),
+    'field' => array(
+      'handler' => 'civicrm_proximity_handler_field',
+      'click sortable' => TRUE,
+    ),
+  );
+}
+
+/**
+ * Implementation of hook_views_handlers()
+ */
+function civicrm_proximity_views_handlers() {
+  return array(
+    'info' => array(
+      'path' => drupal_get_path('module', 'civicrm_proximity') .'/views',
+      ),
+    'handlers' => array(
+      'civicrm_proximity_handler_filter' => array(
+        'parent' => 'views_handler_filter_float',
+      ),
+      'civicrm_proximity_handler_filter_square' => array(
+        'parent' => 'civicrm_proximity_handler_filter',
+      ),
+      'civicrm_proximity_handler_filter_circle' => array(
+        'parent' => 'civicrm_proximity_handler_filter',
+      ),
+      'civicrm_proximity_handler_sort' => array(
+        'parent' => 'views_handler_sort',
+      ),
+      'civicrm_proximity_handler_field' => array(
+        'parent' => 'views_handler_field_numeric',
+      ),
+    ),
+  );
+}
+
+/**
+ * Gets available unit of measurement.
+ */
+function civicrm_proximity_get_available_units() {
+  return module_invoke_all('measurement_units');
+}
+
+/**
+ * Gets available unit of measurement as select options.
+ */
+function civicrm_proximity_get_available_units_for_select() {
+  $units = array();
+  foreach (module_invoke_all('measurement_units') as $unit => $info) {
+    $units[$unit] = $info['long'];
+  }
+  return $units;
+}
+
+/**
+ * Implementation of hook_measurement_units()
+ * 
+ * Expose available units of measurement. To perform conversion
+ * we must implement, for each unit, it respective:
+ * hook_measurement_units_convert_<UNIT>()
+ */
+function civicrm_proximity_measurement_units() {
+  return array(
+    'km' => array(
+      'long'  => t('Kilometers'),
+      'short' => t('Km'),
+      'const' => 1,
+     ),
+    'miles' => array(
+      'long'  => t('Miles'),
+      'short' => t('Mi'),
+      'const' => 1.609344,
+     ),
+  );
+}
+
+/**
+ * Conversion helper: convert from $unit to Kilometers.
+ */
+function civicrm_proximity_measurement_units_convert($unit, $value) {
+  $units = module_invoke_all('measurement_units');
+  if (isset($units[$unit]) && is_numeric($units[$unit]['const'])) {
+    return $value * $units[$unit]['const'];
+  }
+  return $value;
+}
+
+/**
+ * Conversion helper: convert from Kilometers to $unit.
+ */
+function civicrm_proximity_measurement_units_convert_back($unit, $value) {
+  $units = module_invoke_all('measurement_units');
+  if (isset($units[$unit]) && is_numeric($units[$unit]['const']) && $units[$unit]['const'] !== 0) {
+    return $value / $units[$unit]['const'];
+  }
+  return $value;
+}
+
+/**
+ * Query Google geocoding web service.
+ * 
+ * @param $address Address or location name.
+ * @return Geocoder response.
+ */
+function civicrm_proximity_geocode($address) {
+
+  $locs = $args = array();
+  $args['address'] = str_replace(' ', '+', $address);
+  $language = language_default();
+  $args['language'] = $language->language;
+  $args['oe'] = 'utf-8';
+  $args['sensor'] = 'false';
+  $query = http_build_query($args, '', '&');
+  
+  if (function_exists("curl_init")) {
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, CIVICRM_PROXIMITY_GOOGLE_GEOCODER_URL . $query);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    $result = curl_exec($ch);
+    curl_close($ch);
+  }
+  else {
+    $result = file_get_contents(CIVICRM_PROXIMITY_GOOGLE_GEOCODER_URL . $query);
+  }
+  
+  $response = json_decode($result);
+
+  if ($response->status == CIVICRM_PROXIMITY_GOOGLE_STATUS_OK) {
+    foreach ($response->results as $result) {
+      $loc = $components = array();
+      foreach ($result->address_components as $component) {
+        $key = $component->types[0];
+        $components[$key] = $component->long_name;
+        if ($key == 'country') {
+          $components['country_code'] = $component->short_name;
+        }
+      }
+      $components['street_address'] = $loc['address'] = $result->formatted_address;
+      $loc['components'] = $components;
+      $loc['location'] = (array) $result->geometry->location;
+      $loc['bounds'] = (array) $result->geometry->viewport;
+      $locs[] = $loc;
+    }
+  }
+  return $locs;
+}
+

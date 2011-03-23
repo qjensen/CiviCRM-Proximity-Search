@@ -1,0 +1,5 @@
+name = CiviCRM Proximity Search
+description = Geographical proximity search for CiviCRM.
+core = 6.x
+package = CiviCRM
+dependencies[] = civicrm
