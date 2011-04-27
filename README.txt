@@ -1,9 +1,25 @@
-CiviCRM Proximity Search
 
-CiviCRM provides proximity search functionality on CiviCRM forms, but this is not 
-availalbe via Views. CiviCRM Proximity Search borrows heavily from the OpenLayers Proximity
-project to add this functionality to CiviCRM contact searches in Views.
 
-Please make sure the CiviCRM is installed and functioning correctly and that you have enabled
-GeoCoding in CiviCRM. If you need help, instructions can be found at
-http://wiki.civicrm.org/confluence/display/CRMDOC33/Mapping+and+Geocoding 
+# CiviCRM Proximity
+
+CiviCRM Proximity enables geographical proximity search for the CiviCRM 
+module.
+
+
+# Views integration
+
+OpenLayers Proximity exposes:
+
+ * Square filter: it gives locations contained within a square derived by a 
+   simple latitude/longitude comparison. Less accurate, better performance
+ * Great-circle filter: it uses the Great-circle distance formula to return 
+   locations within a circular area. More accurate, lower performance.
+
+
+
+# Configuration 
+
+Before enabling the module it is necessary to enable geocoding in your CiviCRM
+database and run the script that populates those fields.
+
+ http://wiki.civicrm.org/confluence/display/CRMDOC33/Batch+Geocoding+Script
